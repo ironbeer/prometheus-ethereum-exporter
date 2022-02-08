@@ -42,4 +42,4 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
 
-replace github.com/umbracle/go-web3 => /Users/akiyama/Develop/private/go-web3
+replace github.com/umbracle/go-web3 => ../go-web3
