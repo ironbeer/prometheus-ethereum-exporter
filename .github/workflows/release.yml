@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release-binary:
+    name: Release Binary
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        archtec: [amd64, arm64]
+        include:
+          - archtec: amd64
+            goos: linux
+            arch: amd64
+          - archtec: arm64
+            goos: linux
+            arch: arm64
+    steps:
+      - name: Setup Go 1.17
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.17
+
+      - name: Check out
+        uses: actions/checkout@v2
+        with:
+          path: ./repo
+
+      - name: Check out
+        uses: actions/checkout@v2
+        with:
+          repository: ironbeer/go-web3
+          path: ./go-web3
+
+      - name: Get dependencies
+        run: go get -v -t -d ./...
+        working-directory: ./repo
+
+      - name: Build
+        run: |
+          mkdir dist
+          GCO_ENABLED=0 GOOS=$goos GOARCH=${{ matrix.arch }} go build -o dist/${{ github.event.repository.name }} .
+          zip -j -r ${{ github.event.repository.name }}_${{ matrix.goos }}_${{ matrix.arch }} dist
+          ls 
+        working-directory: ./repo
+
+      - name: Upload release asset
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.get_url.outputs.upload_url }}
+          asset_path: ./repo/${{ github.event.repository.name }}_${{ matrix.goos }}_${{ matrix.arch }}.zip
+          asset_name: ${{ github.event.repository.name }}_${{ matrix.goos }}_${{ matrix.arch }}.zip
+          asset_content_type: application/octet-stream
