@@ -1,12 +1,14 @@
 package main
 
 import (
+	"ironbeer/prometheus-ethereum-exporter/optimism"
 	"math/big"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/go-kit/log/level"
@@ -24,9 +26,12 @@ import (
 var (
 	webConfig     = webflag.AddFlags(kingpin.CommandLine)
 	listenAddress = kingpin.Flag("web.listen", "The address to listen on for HTTP requests.").Default(":49000").String()
-	methods       = map[string]func(w http.ResponseWriter, r *http.Request){
-		"eth.getBalance": getBalance,
-		"eth.getBlock":   getBlock,
+	abiPath       = kingpin.Flag("optimism.abi", "Optimism L1 ABI directory path").Default("").String()
+
+	methods = map[string]func(w http.ResponseWriter, r *http.Request){
+		"eth.getBalance":  getBalance,
+		"eth.getBlock":    getBlock,
+		"optimism.status": optimismStatus,
 	}
 )
 
@@ -144,6 +149,97 @@ func getBlock(w http.ResponseWriter, r *http.Request) {
 	gasUsed.Set(float64(block.GasUsed))
 	transactions.Set(float64(len(block.TransactionsHashes)))
 	pendingTransactions.Set(float64(pendingTx))
+
+	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
+	h.ServeHTTP(w, r)
+}
+
+func optimismStatus(w http.ResponseWriter, r *http.Request) {
+	rpc := r.URL.Query().Get("rpc")
+	ctc := r.URL.Query().Get("ctc")
+	if rpc == "" || ctc == "" {
+		return
+	}
+
+	client, err := jsonrpc.NewClient(rpc)
+	if err != nil {
+		return
+	}
+
+	oclient := optimism.NewOptimismClient(client, *abiPath)
+	contract, err := oclient.GetContract("CanonicalTransactionChain", web3.HexToAddress(ctc))
+	if err != nil {
+		return
+	}
+
+	totalElements := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "eth_optimism_ctc_total_elements",
+		Help: " Retrieves the total number of elements submitted",
+	})
+	totalBatches := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "eth_optimism_ctc_total_batches",
+		Help: "Retrieves the total number of batches submitted",
+	})
+	nextQueueIndex := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "eth_optimism_ctc_next_queue_index",
+		Help: "Returns the index of the next element to be enqueued",
+	})
+	lastTimestamp := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "eth_optimism_ctc_last_timestamp",
+		Help: "Returns the timestamp of the last transaction",
+	})
+	lastBlockNumber := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "eth_optimism_ctc_last_block_number",
+		Help: "Returns the blocknumber of the last transaction",
+	})
+	numPendingQueueElements := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "eth_optimism_ctc_num_pending_queue_elements",
+		Help: "Get the number of queue elements which have not yet been included",
+	})
+	queueLength := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "eth_optimism_ctc_queue_length",
+		Help: "Retrieves the length of the queue, including both pending and canonical transactions",
+	})
+
+	metrics := map[string]struct {
+		gauge prometheus.Gauge
+		key   string
+	}{
+		"getTotalElements":           {totalElements, "_totalElements"},
+		"getTotalBatches":            {totalBatches, "_totalBatches"},
+		"getNextQueueIndex":          {nextQueueIndex, "0"},
+		"getLastTimestamp":           {lastTimestamp, "0"},
+		"getLastBlockNumber":         {lastBlockNumber, "0"},
+		"getNumPendingQueueElements": {numPendingQueueElements, "0"},
+		"getQueueLength":             {queueLength, "0"},
+	}
+
+	registry := prometheus.NewRegistry()
+
+	var wg sync.WaitGroup
+	wg.Add(len(metrics))
+
+	for method, m := range metrics {
+		go func(gauge prometheus.Gauge, method, key string) {
+			defer wg.Done()
+
+			registry.MustRegister(gauge)
+
+			result, err := contract.Call(method, web3.Latest)
+			if err != nil {
+				return
+			}
+
+			val, ok := oclient.DecodeBigInt(result, key)
+			if !ok {
+				return
+			}
+
+			gauge.Set(val)
+		}(m.gauge, method, m.key)
+	}
+
+	wg.Wait()
 
 	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 	h.ServeHTTP(w, r)
