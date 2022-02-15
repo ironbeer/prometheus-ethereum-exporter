@@ -1,11 +1,12 @@
 package main
 
 import (
-	"ironbeer/prometheus-ethereum-exporter/optimism"
+	"ironbeer/prometheus-ethereum-exporter/contract"
 	"math/big"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,11 +27,12 @@ import (
 var (
 	webConfig     = webflag.AddFlags(kingpin.CommandLine)
 	listenAddress = kingpin.Flag("web.listen", "The address to listen on for HTTP requests.").Default(":49000").String()
-	abiPath       = kingpin.Flag("optimism.abi", "Optimism L1 ABI directory path").Default("").String()
+	abiPath       = kingpin.Flag("abi", "Contract ABI directory path").Default("").String()
 
 	methods = map[string]func(w http.ResponseWriter, r *http.Request){
 		"eth.getBalance":  getBalance,
 		"eth.getBlock":    getBlock,
+		"oasys.staking":   oasysStaking,
 		"optimism.status": optimismStatus,
 	}
 )
@@ -154,20 +156,100 @@ func getBlock(w http.ResponseWriter, r *http.Request) {
 	h.ServeHTTP(w, r)
 }
 
-func optimismStatus(w http.ResponseWriter, r *http.Request) {
-	rpc := r.URL.Query().Get("rpc")
-	ctc := r.URL.Query().Get("ctc")
-	if rpc == "" || ctc == "" {
+func oasysStaking(w http.ResponseWriter, r *http.Request) {
+	rpcUrl := r.URL.Query().Get("rpc")
+	if rpcUrl == "" {
 		return
 	}
 
-	client, err := jsonrpc.NewClient(rpc)
+	provider, err := jsonrpc.NewClient(rpcUrl)
 	if err != nil {
 		return
 	}
 
-	oclient := optimism.NewOptimismClient(client, *abiPath)
-	contract, err := oclient.GetContract("CanonicalTransactionChain", web3.HexToAddress(ctc))
+	staking, err := contract.GetContract(
+		provider, web3.HexToAddress("0x0000000000000000000000000000000000001000"),
+		filepath.Join(*abiPath, "StakingManager.json"))
+	if err != nil {
+		return
+	}
+
+	currentEpoch := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "eth_oasys_staking_current_epoch",
+		Help: "Retrieves the current staking epoch number",
+	})
+	currentEpochProgress := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "eth_oasys_staking_current_epoch_progress",
+		Help: "Retrieves the current staking epoch progress",
+	})
+	validatorCount := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "eth_oasys_staking_validator_count",
+		Help: "Retrieves the current validator count",
+	})
+	totalStakingAmount := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "eth_oasys_staking_total_staking_amount",
+		Help: "Retrieves the total staking amount",
+	})
+	totalDelegatingAmount := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "eth_oasys_staking_total_delegating_amount",
+		Help: "Retrieves the total delegating amount",
+	})
+	totalReward := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "eth_oasys_staking_total_reward_balance",
+		Help: "Retrieves the total current reward balance",
+	})
+	totalTotalReward := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "eth_oasys_staking_total_reward",
+		Help: "Retrieves the total reward",
+	})
+
+	metrics := map[string]prometheus.Gauge{
+		"currentEpoch":          currentEpoch,
+		"currentEpochProgress":  currentEpochProgress,
+		"validatorCount":        validatorCount,
+		"totalStakingAmount":    totalStakingAmount,
+		"totalDelegatingAmount": totalDelegatingAmount,
+		"totalReward":           totalReward,
+		"totalTotalReward":      totalTotalReward,
+	}
+
+	registry := prometheus.NewRegistry()
+
+	for key, gauge := range metrics {
+		registry.MustRegister(gauge)
+
+		result, err := staking.Call("getGlobalOverview", web3.Latest)
+		if err != nil {
+			return
+		}
+
+		val, ok := contract.DecodeBigInt(result, key)
+		if !ok {
+			return
+		}
+
+		gauge.Set(val)
+	}
+
+	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
+	h.ServeHTTP(w, r)
+}
+
+func optimismStatus(w http.ResponseWriter, r *http.Request) {
+	rpcUrl := r.URL.Query().Get("rpc")
+	ctcAddress := r.URL.Query().Get("ctc")
+	if rpcUrl == "" || ctcAddress == "" {
+		return
+	}
+
+	provider, err := jsonrpc.NewClient(rpcUrl)
+	if err != nil {
+		return
+	}
+
+	ctc, err := contract.GetContract(
+		provider, web3.HexToAddress(ctcAddress),
+		filepath.Join(*abiPath, "CanonicalTransactionChain.json"))
 	if err != nil {
 		return
 	}
@@ -225,12 +307,12 @@ func optimismStatus(w http.ResponseWriter, r *http.Request) {
 
 			registry.MustRegister(gauge)
 
-			result, err := contract.Call(method, web3.Latest)
+			result, err := ctc.Call(method, web3.Latest)
 			if err != nil {
 				return
 			}
 
-			val, ok := oclient.DecodeBigInt(result, key)
+			val, ok := contract.DecodeBigInt(result, key)
 			if !ok {
 				return
 			}

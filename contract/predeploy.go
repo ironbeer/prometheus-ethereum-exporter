@@ -1,4 +1,4 @@
-package optimism
+package contract
 
 import "github.com/umbracle/go-web3"
 

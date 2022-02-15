@@ -1,9 +1,8 @@
-package optimism
+package contract
 
 import (
 	"io/ioutil"
 	"math/big"
-	"path/filepath"
 
 	web3 "github.com/umbracle/go-web3"
 	web3abi "github.com/umbracle/go-web3/abi"
@@ -11,24 +10,19 @@ import (
 	"github.com/umbracle/go-web3/jsonrpc"
 )
 
-type OptimismClient struct {
-	provider *jsonrpc.Client
-	abiPath  string
-}
-
-func NewOptimismClient(provider *jsonrpc.Client, abiPath string) *OptimismClient {
-	return &OptimismClient{provider, abiPath}
-}
-
-func (p *OptimismClient) GetContract(contractName string, contractAddress web3.Address) (*web3contract.Contract, error) {
-	abi, err := loadAbi(filepath.Join(p.abiPath, contractName+".json"))
+func GetContract(
+	provider *jsonrpc.Client,
+	contractAddress web3.Address,
+	abiPath string,
+) (*web3contract.Contract, error) {
+	abi, err := loadAbi(abiPath)
 	if err != nil {
 		return nil, err
 	}
-	return web3contract.NewContract(contractAddress, abi, p.provider), nil
+	return web3contract.NewContract(contractAddress, abi, provider), nil
 }
 
-func (p *OptimismClient) DecodeBigInt(v map[string]interface{}, key string) (float64, bool) {
+func DecodeBigInt(v map[string]interface{}, key string) (float64, bool) {
 	val1, ok := v[key]
 	if !ok {
 		return 0, false
