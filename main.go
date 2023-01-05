@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"math/big"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -17,16 +19,25 @@ import (
 	"github.com/prometheus/exporter-toolkit/web"
 	webflag "github.com/prometheus/exporter-toolkit/web/kingpinflag"
 	web3 "github.com/umbracle/go-web3"
+	web3contract "github.com/umbracle/go-web3/contract"
 	"github.com/umbracle/go-web3/jsonrpc"
 	"gopkg.in/alecthomas/kingpin.v2"
+
+	"ironbeer/prometheus-ethereum-exporter/contract"
 )
 
 var (
 	webConfig     = webflag.AddFlags(kingpin.CommandLine)
-	listenAddress = kingpin.Flag("web.listen", "The address to listen on for HTTP requests.").Default(":49000").String()
-	methods       = map[string]func(w http.ResponseWriter, r *http.Request){
-		"eth.getBalance": getBalance,
-		"eth.getBlock":   getBlock,
+	listenAddress = kingpin.
+			Flag("web.listen", "The address to listen on for HTTP requests.").
+			Default(":49000").
+			String()
+	abiPath = kingpin.Flag("abi", "Contract ABI directory path").Default("").String()
+
+	methods = map[string]func(w http.ResponseWriter, r *http.Request){
+		"eth.getBalance":  getBalance,
+		"eth.getBlock":    getBlock,
+		"optimism.status": optimismStatus,
 	}
 )
 
@@ -144,6 +155,142 @@ func getBlock(w http.ResponseWriter, r *http.Request) {
 	gasUsed.Set(float64(block.GasUsed))
 	transactions.Set(float64(len(block.TransactionsHashes)))
 	pendingTransactions.Set(float64(pendingTx))
+
+	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
+	h.ServeHTTP(w, r)
+}
+
+func optimismStatus(w http.ResponseWriter, r *http.Request) {
+	rpcUrl := r.URL.Query().Get("rpc")
+	ctcAddress := r.URL.Query().Get("ctc")
+	sccAddress := r.URL.Query().Get("scc")
+	if rpcUrl == "" || ctcAddress == "" || sccAddress == "" {
+		return
+	}
+
+	provider, err := jsonrpc.NewClient(rpcUrl)
+	if err != nil {
+		return
+	}
+
+	ctc, err := contract.GetContract(
+		provider, web3.HexToAddress(ctcAddress),
+		filepath.Join(*abiPath, "CanonicalTransactionChain.json"))
+	if err != nil {
+		return
+	}
+
+	scc, err := contract.GetContract(
+		provider, web3.HexToAddress(sccAddress),
+		filepath.Join(*abiPath, "OasysStateCommitmentChain.json"))
+	if err != nil {
+		return
+	}
+
+	metrics := []struct {
+		contract    *web3contract.Contract
+		method, key string
+		collector   prometheus.Gauge
+	}{
+		// CanonicalTransactionChain
+		{
+			ctc, "getTotalElements", "_totalElements",
+			prometheus.NewGauge(prometheus.GaugeOpts{
+				Name: "eth_optimism_ctc_total_elements",
+				Help: " Retrieves the total number of elements submitted",
+			}),
+		},
+		{
+			ctc, "getTotalBatches", "_totalBatches",
+			prometheus.NewGauge(prometheus.GaugeOpts{
+				Name: "eth_optimism_ctc_total_batches",
+				Help: "Retrieves the total number of batches submitted",
+			}),
+		},
+		{
+			ctc, "getNextQueueIndex", "0",
+			prometheus.NewGauge(prometheus.GaugeOpts{
+				Name: "eth_optimism_ctc_next_queue_index",
+				Help: "Returns the index of the next element to be enqueued",
+			}),
+		},
+		{
+			ctc, "getLastTimestamp", "0",
+			prometheus.NewGauge(prometheus.GaugeOpts{
+				Name: "eth_optimism_ctc_last_timestamp",
+				Help: "Returns the timestamp of the last transaction",
+			}),
+		},
+		{
+			ctc, "getLastBlockNumber", "0",
+			prometheus.NewGauge(prometheus.GaugeOpts{
+				Name: "eth_optimism_ctc_last_block_number",
+				Help: "Returns the blocknumber of the last transaction",
+			}),
+		},
+		{
+			ctc, "getNumPendingQueueElements", "0",
+			prometheus.NewGauge(prometheus.GaugeOpts{
+				Name: "eth_optimism_ctc_num_pending_queue_elements",
+				Help: "Get the number of queue elements which have not yet been included",
+			}),
+		},
+		{
+			ctc, "getQueueLength", "0",
+			prometheus.NewGauge(prometheus.GaugeOpts{
+				Name: "eth_optimism_ctc_queue_length",
+				Help: "Retrieves the length of the queue, including both pending and canonical transactions",
+			}),
+		},
+		// StateCommitmentChain
+		{
+			scc, "getTotalElements", "_totalElements",
+			prometheus.NewGauge(prometheus.GaugeOpts{
+				Name: "eth_optimism_scc_total_elements",
+				Help: " Retrieves the total number of elements submitted",
+			}),
+		},
+		{
+			scc, "getTotalBatches", "_totalBatches",
+			prometheus.NewGauge(prometheus.GaugeOpts{
+				Name: "eth_optimism_scc_total_batches",
+				Help: "Retrieves the total number of batches submitted",
+			}),
+		},
+		{
+			scc, "getLastSequencerTimestamp", "_lastSequencerTimestamp",
+			prometheus.NewGauge(prometheus.GaugeOpts{
+				Name: "eth_optimism_scc_last_sequencer_timestamp",
+				Help: "Retrieves the timestamp of the last batch submitted by the sequencer",
+			}),
+		},
+		{
+			scc, "nextIndex", "0",
+			prometheus.NewGauge(prometheus.GaugeOpts{
+				Name: "eth_optimism_scc_next_index",
+				Help: "Retrieves the batch index to verify next",
+			}),
+		},
+	}
+
+	registry := prometheus.NewRegistry()
+
+	for _, m := range metrics {
+		registry.MustRegister(m.collector)
+
+		result, err := m.contract.Call(m.method, web3.Latest)
+		if err != nil {
+			fmt.Printf("method: %s, key: %s, err: %s\n", m.method, m.key, err.Error())
+			return
+		}
+
+		val, ok := contract.DecodeBigInt(result, m.key)
+		if !ok {
+			return
+		}
+
+		m.collector.Set(val)
+	}
 
 	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 	h.ServeHTTP(w, r)

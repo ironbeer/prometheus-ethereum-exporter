@@ -6,19 +6,12 @@ on:
       - "v*"
 
 jobs:
-  release-binary:
-    name: Release Binary
+  build:
+    name: Build
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        archtec: [amd64, arm64]
-        include:
-          - archtec: amd64
-            goos: linux
-            arch: amd64
-          - archtec: arm64
-            goos: linux
-            arch: arm64
+        arch: [amd64, arm64]
     steps:
       - name: Setup Go 1.17
         uses: actions/setup-go@v1
@@ -40,20 +33,59 @@ jobs:
         run: go get -v -t -d ./...
         working-directory: ./repo
 
-      - name: Build
+      - name: Build Binary
         run: |
-          mkdir dist
-          GCO_ENABLED=0 GOOS=$goos GOARCH=${{ matrix.arch }} go build -o dist/${{ github.event.repository.name }} .
-          zip -j -r ${{ github.event.repository.name }}_${{ matrix.goos }}_${{ matrix.arch }} dist
-          ls 
+          CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.arch }} \
+            go build -a -o ${{ github.event.repository.name }} .
         working-directory: ./repo
 
-      - name: Upload release asset
+      - name: Compress Binary
+        run: zip -j ${{ github.event.repository.name }}_linux_${{ matrix.arch }}.zip ./repo/${{ github.event.repository.name }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ github.ref_name }}
+          path: ${{ github.event.repository.name }}_linux_${{ matrix.arch }}.zip
+
+  release:
+    name: Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: ${{ github.ref_name }}
+          path: artifacts
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Asset - amd64
         uses: actions/upload-release-asset@v1.0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.get_url.outputs.upload_url }}
-          asset_path: ./repo/${{ github.event.repository.name }}_${{ matrix.goos }}_${{ matrix.arch }}.zip
-          asset_name: ${{ github.event.repository.name }}_${{ matrix.goos }}_${{ matrix.arch }}.zip
-          asset_content_type: application/octet-stream
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: artifacts/${{ github.event.repository.name }}_linux_amd64.zip
+          asset_name: ${{ github.event.repository.name }}_linux_amd64.zip
+          asset_content_type: application/zip
+
+      - name: Upload Asset - arm64
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: artifacts/${{ github.event.repository.name }}_linux_arm64.zip
+          asset_name: ${{ github.event.repository.name }}_linux_arm64.zip
+          asset_content_type: application/zip
