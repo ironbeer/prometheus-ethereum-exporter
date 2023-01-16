@@ -66,6 +66,7 @@ func getBalance(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+	defer client.Close()
 
 	number, err := client.Eth().GetBalance(web3.HexToAddress(address), web3.Latest)
 	if err != nil {
@@ -78,6 +79,7 @@ func getBalance(w http.ResponseWriter, r *http.Request) {
 	})
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(guage)
+	defer registry.Unregister(guage)
 
 	guage.Set(bigToFloat(number))
 
@@ -95,6 +97,7 @@ func getBlock(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+	defer client.Close()
 
 	block, err := client.Eth().GetBlockByNumber(web3.Latest, false)
 	if err != nil {
@@ -139,14 +142,21 @@ func getBlock(w http.ResponseWriter, r *http.Request) {
 		Help: "Displays ethereum latest pending transaction count",
 	})
 
+	collectors := []prometheus.Collector{
+		number,
+		baseFeePerGas,
+		timestamp,
+		gasLimit,
+		gasUsed,
+		transactions,
+		pendingTransactions,
+	}
+
 	registry := prometheus.NewRegistry()
-	registry.MustRegister(number)
-	registry.MustRegister(baseFeePerGas)
-	registry.MustRegister(timestamp)
-	registry.MustRegister(gasLimit)
-	registry.MustRegister(gasUsed)
-	registry.MustRegister(transactions)
-	registry.MustRegister(pendingTransactions)
+	for _, c := range collectors {
+		registry.MustRegister(c)
+		defer registry.Unregister(c)
+	}
 
 	number.Set(float64(block.Number))
 	baseFeePerGas.Set(float64(block.BaseFeePerGas))
@@ -168,20 +178,21 @@ func optimismStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	provider, err := jsonrpc.NewClient(rpcUrl)
+	client, err := jsonrpc.NewClient(rpcUrl)
 	if err != nil {
 		return
 	}
+	defer client.Close()
 
 	ctc, err := contract.GetContract(
-		provider, web3.HexToAddress(ctcAddress),
+		client, web3.HexToAddress(ctcAddress),
 		filepath.Join(*abiPath, "CanonicalTransactionChain.json"))
 	if err != nil {
 		return
 	}
 
 	scc, err := contract.GetContract(
-		provider, web3.HexToAddress(sccAddress),
+		client, web3.HexToAddress(sccAddress),
 		filepath.Join(*abiPath, "OasysStateCommitmentChain.json"))
 	if err != nil {
 		return
@@ -277,6 +288,7 @@ func optimismStatus(w http.ResponseWriter, r *http.Request) {
 
 	for _, m := range metrics {
 		registry.MustRegister(m.collector)
+		defer registry.Unregister(m.collector)
 
 		result, err := m.contract.Call(m.method, web3.Latest)
 		if err != nil {
@@ -303,11 +315,9 @@ func main() {
 	logger := promlog.New(promlogConfig)
 
 	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		method, ok := methods[r.URL.Query().Get("method")]
-		if !ok {
-			return
+		if method, ok := methods[r.URL.Query().Get("method")]; ok {
+			method(w, r)
 		}
-		method(w, r)
 	})
 
 	srv := &http.Server{Addr: *listenAddress}
