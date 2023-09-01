@@ -110,7 +110,9 @@ func GetBlock(w http.ResponseWriter, r *http.Request) {
 	}
 
 	number.Set(bigFloat(block.Number()))
-	baseFeePerGas.Set(bigFloat(block.BaseFee()))
+	if bf := block.BaseFee(); bf != nil {
+		baseFeePerGas.Set(bigFloat(bf))
+	}
 	timestamp.Set(float64(block.Time()))
 	gasLimit.Set((float64(block.GasLimit())))
 	gasUsed.Set((float64(block.GasUsed())))
