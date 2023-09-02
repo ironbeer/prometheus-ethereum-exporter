@@ -3,7 +3,6 @@ package optimism
 import (
 	"bytes"
 	_ "embed"
-	"fmt"
 	"net/http"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -41,7 +40,7 @@ func init() {
 	}
 }
 
-func Status(w http.ResponseWriter, r *http.Request) {
+func Status(w http.ResponseWriter, r *http.Request) error {
 	rpc := r.URL.Query().Get("rpc")
 	ctcAddr := common.HexToAddress(r.URL.Query().Get("ctc"))
 	sccAddr := common.HexToAddress(r.URL.Query().Get("scc"))
@@ -190,8 +189,7 @@ func Status(w http.ResponseWriter, r *http.Request) {
 	)
 	for _, c := range contracts {
 		if x, err := c.contract.Calls(c.addr); err != nil {
-			fmt.Println(err.Error())
-			return
+			return err
 		} else {
 			calls = append(calls, x...)
 			limits = append(limits, len(x))
@@ -200,20 +198,17 @@ func Status(w http.ResponseWriter, r *http.Request) {
 
 	client, err := ethclient.Dial(rpc)
 	if err != nil {
-		fmt.Println(err.Error())
-		return
+		return err
 	}
 	defer client.Close()
 
 	mcall, err := multicall2.NewMulticall2(mcallAddr, client)
 	if err != nil {
-		fmt.Println(err.Error())
-		return
+		return err
 	}
 	result, err := mcall.Aggregate(&bind.CallOpts{Context: r.Context()}, calls)
 	if err != nil {
-		fmt.Println(err.Error())
-		return
+		return err
 	}
 
 	registry := prometheus.NewRegistry()
@@ -226,8 +221,7 @@ func Status(w http.ResponseWriter, r *http.Request) {
 
 		collectors, err := c.contract.Collectors(datas)
 		if err != nil {
-			fmt.Println(err.Error())
-			return
+			return err
 		}
 
 		for _, col := range collectors {
@@ -238,4 +232,5 @@ func Status(w http.ResponseWriter, r *http.Request) {
 
 	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 	h.ServeHTTP(w, r)
+	return nil
 }

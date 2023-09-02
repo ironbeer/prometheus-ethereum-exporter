@@ -1,6 +1,7 @@
 package basic
 
 import (
+	"errors"
 	"math/big"
 	"net/http"
 
@@ -10,22 +11,25 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-func GetBalance(w http.ResponseWriter, r *http.Request) {
+func GetBalance(w http.ResponseWriter, r *http.Request) error {
 	rpc := r.URL.Query().Get("rpc")
 	address := r.URL.Query().Get("address")
-	if rpc == "" || address == "" {
-		return
+	if rpc == "" {
+		return errors.New("missing parameter: rpc")
+	}
+	if address == "" {
+		return errors.New("missing parameter: address")
 	}
 
 	client, err := ethclient.Dial(rpc)
 	if err != nil {
-		return
+		return err
 	}
 	defer client.Close()
 
 	balance, err := client.BalanceAt(r.Context(), common.HexToAddress(address), nil)
 	if err != nil {
-		return
+		return err
 	}
 
 	guage := prometheus.NewGauge(prometheus.GaugeOpts{
@@ -40,28 +44,29 @@ func GetBalance(w http.ResponseWriter, r *http.Request) {
 
 	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 	h.ServeHTTP(w, r)
+	return nil
 }
 
-func GetBlock(w http.ResponseWriter, r *http.Request) {
+func GetBlock(w http.ResponseWriter, r *http.Request) error {
 	rpc := r.URL.Query().Get("rpc")
 	if rpc == "" {
-		return
+		return errors.New("missing parameter: rpc")
 	}
 
 	client, err := ethclient.Dial(rpc)
 	if err != nil {
-		return
+		return err
 	}
 	defer client.Close()
 
 	block, err := client.BlockByNumber(r.Context(), nil)
 	if err != nil {
-		return
+		return err
 	}
 
 	pendingTx, err := client.PendingTransactionCount(r.Context())
 	if err != nil {
-		return
+		return err
 	}
 
 	number := prometheus.NewGauge(prometheus.GaugeOpts{
@@ -121,6 +126,7 @@ func GetBlock(w http.ResponseWriter, r *http.Request) {
 
 	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 	h.ServeHTTP(w, r)
+	return nil
 }
 
 func bigFloat(number *big.Int) float64 {

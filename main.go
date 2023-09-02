@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -25,7 +26,7 @@ var (
 			Default(":49000").
 			String()
 
-	methods = map[string]http.HandlerFunc{
+	methods = map[string]func(http.ResponseWriter, *http.Request) error{
 		"eth.getBalance":  basic.GetBalance,
 		"eth.getBlock":    basic.GetBlock,
 		"pos.validator":   pos.Validator,
@@ -40,8 +41,11 @@ func main() {
 	logger := promlog.New(promlogConfig)
 
 	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		if method, ok := methods[r.URL.Query().Get("method")]; ok {
-			method(w, r)
+		name := r.URL.Query().Get("method")
+		if method, ok := methods[name]; !ok {
+			fmt.Printf("unknown method: %s\n", name)
+		} else if err := method(w, r); err != nil {
+			fmt.Println(err.Error())
 		}
 	})
 

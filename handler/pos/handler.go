@@ -3,7 +3,6 @@ package pos
 import (
 	"bytes"
 	_ "embed"
-	"fmt"
 	"net/http"
 
 	ethabi "github.com/ethereum/go-ethereum/accounts/abi"
@@ -32,7 +31,7 @@ func init() {
 	}
 }
 
-func Validator(w http.ResponseWriter, r *http.Request) {
+func Validator(w http.ResponseWriter, r *http.Request) error {
 	rpc := r.URL.Query().Get("rpc")
 	stakeManagerAddr := common.HexToAddress(r.URL.Query().Get("stakingmanager"))
 	validatorAddr := common.HexToAddress(r.URL.Query().Get("validator"))
@@ -74,32 +73,27 @@ func Validator(w http.ResponseWriter, r *http.Request) {
 
 	calls, err := contract.Calls(stakeManagerAddr)
 	if err != nil {
-		fmt.Println(err.Error())
-		return
+		return err
 	}
 
 	client, err := ethclient.Dial(rpc)
 	if err != nil {
-		fmt.Println(err.Error())
-		return
+		return err
 	}
 	defer client.Close()
 
 	mcall, err := multicall2.NewMulticall2(mcallAddr, client)
 	if err != nil {
-		fmt.Println(err.Error())
-		return
+		return err
 	}
 	result, err := mcall.Aggregate(&bind.CallOpts{Context: r.Context()}, calls)
 	if err != nil {
-		fmt.Println(err.Error())
-		return
+		return err
 	}
 
 	collectors, err := contract.Collectors(result.ReturnData)
 	if err != nil {
-		fmt.Println(err.Error())
-		return
+		return err
 	}
 
 	registry := prometheus.NewRegistry()
@@ -110,4 +104,5 @@ func Validator(w http.ResponseWriter, r *http.Request) {
 
 	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 	h.ServeHTTP(w, r)
+	return nil
 }
