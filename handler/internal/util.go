@@ -12,10 +12,9 @@ import (
 )
 
 var (
-	errTypeMismatch = errors.New("type mismatch")
+	errValueNotFound = errors.New("value not found")
+	errTypeMismatch  = errors.New("type mismatch")
 )
-
-type Methodx = string
 
 type Contract struct {
 	Name    string
@@ -31,11 +30,10 @@ type Method struct {
 
 type Metric struct {
 	Name, Help string
-	Output     string
-	OutputFn   OutputFn
+	Output     OutputFn
 }
 
-type OutputFn func(src interface{}) (float64, error)
+type OutputFn func(values map[string]interface{}) (float64, error)
 
 func (c *Contract) Calls(addr common.Address) (calls []multicall2.Multicall2Call, err error) {
 	for _, method := range c.Methods {
@@ -62,11 +60,11 @@ func (c *Contract) Collectors(datas [][]byte) ([]prometheus.Collector, error) {
 		}
 
 		for _, metric := range method.Metrics {
-			val, err := metric.OutputFn(values[metric.Output])
+			val, err := metric.Output(values)
 			if err != nil {
 				return nil, fmt.Errorf(
-					"not found: contract=%s method=%s output=%s values=%v",
-					c.Name, method.Name, metric.Output, values)
+					"error: reason=%s contract=%s method=%s metric=%s values=%v",
+					err, c.Name, method.Name, metric.Name, values)
 			}
 
 			collector := prometheus.NewGauge(prometheus.GaugeOpts{
@@ -82,21 +80,27 @@ func (c *Contract) Collectors(datas [][]byte) ([]prometheus.Collector, error) {
 	return collectors, nil
 }
 
-func BigOutput(src interface{}) (float64, error) {
-	t, ok := src.(*big.Int)
-	if !ok {
-		return 0, errTypeMismatch
+func BigOutput(output string) OutputFn {
+	return func(values map[string]interface{}) (float64, error) {
+		if val, ok := values[output]; !ok {
+			return 0, errValueNotFound
+		} else if t, ok := val.(*big.Int); !ok {
+			return 0, errTypeMismatch
+		} else {
+			return float64(t.Uint64()), nil
+		}
 	}
-	return float64(t.Uint64()), nil
 }
 
-func BoolOutput(src interface{}) (float64, error) {
-	t, ok := src.(bool)
-	if !ok {
-		return 0, errTypeMismatch
+func BoolOutput(output string) OutputFn {
+	return func(values map[string]interface{}) (float64, error) {
+		if val, ok := values[output]; !ok {
+			return 0, errValueNotFound
+		} else if t, ok := val.(bool); !ok {
+			return 0, errTypeMismatch
+		} else if t {
+			return 1, nil
+		}
+		return 0, nil
 	}
-	if t {
-		return 1, nil
-	}
-	return 0, nil
 }

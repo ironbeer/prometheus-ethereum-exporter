@@ -54,10 +54,9 @@ func Status(w http.ResponseWriter, r *http.Request) error {
 				Name: "getTotalElements",
 				Metrics: []*util.Metric{
 					{
-						Name:     "eth_optimism_ctc_total_elements",
-						Help:     "Retrieves the total number of elements submitted",
-						Output:   "_totalElements",
-						OutputFn: util.BigOutput,
+						Name:   "eth_optimism_ctc_total_elements",
+						Help:   "Retrieves the total number of elements submitted",
+						Output: util.BigOutput("_totalElements"),
 					},
 				},
 			},
@@ -65,10 +64,9 @@ func Status(w http.ResponseWriter, r *http.Request) error {
 				Name: "getTotalBatches",
 				Metrics: []*util.Metric{
 					{
-						Name:     "eth_optimism_ctc_total_batches",
-						Help:     "Retrieves the total number of batches submitted",
-						Output:   "_totalBatches",
-						OutputFn: util.BigOutput,
+						Name:   "eth_optimism_ctc_total_batches",
+						Help:   "Retrieves the total number of batches submitted",
+						Output: util.BigOutput("_totalBatches"),
 					},
 				},
 			},
@@ -76,9 +74,9 @@ func Status(w http.ResponseWriter, r *http.Request) error {
 				Name: "getNextQueueIndex",
 				Metrics: []*util.Metric{
 					{
-						Name:     "eth_optimism_ctc_next_queue_index",
-						Help:     "Returns the index of the next element to be enqueued",
-						OutputFn: util.BigOutput,
+						Name:   "eth_optimism_ctc_next_queue_index",
+						Help:   "Returns the index of the next element to be enqueued",
+						Output: util.BigOutput(""),
 					},
 				},
 			},
@@ -86,9 +84,9 @@ func Status(w http.ResponseWriter, r *http.Request) error {
 				Name: "getLastTimestamp",
 				Metrics: []*util.Metric{
 					{
-						Name:     "eth_optimism_ctc_last_timestamp",
-						Help:     "Returns the timestamp of the last transaction",
-						OutputFn: util.BigOutput,
+						Name:   "eth_optimism_ctc_last_timestamp",
+						Help:   "Returns the timestamp of the last transaction",
+						Output: util.BigOutput(""),
 					},
 				},
 			},
@@ -96,9 +94,9 @@ func Status(w http.ResponseWriter, r *http.Request) error {
 				Name: "getLastBlockNumber",
 				Metrics: []*util.Metric{
 					{
-						Name:     "eth_optimism_ctc_last_block_number",
-						Help:     "Returns the blocknumber of the last transaction",
-						OutputFn: util.BigOutput,
+						Name:   "eth_optimism_ctc_last_block_number",
+						Help:   "Returns the blocknumber of the last transaction",
+						Output: util.BigOutput(""),
 					},
 				},
 			},
@@ -106,9 +104,9 @@ func Status(w http.ResponseWriter, r *http.Request) error {
 				Name: "getNumPendingQueueElements",
 				Metrics: []*util.Metric{
 					{
-						Name:     "eth_optimism_ctc_num_pending_queue_elements",
-						Help:     "Get the number of queue elements which have not yet been included",
-						OutputFn: util.BigOutput,
+						Name:   "eth_optimism_ctc_num_pending_queue_elements",
+						Help:   "Get the number of queue elements which have not yet been included",
+						Output: util.BigOutput(""),
 					},
 				},
 			},
@@ -116,9 +114,9 @@ func Status(w http.ResponseWriter, r *http.Request) error {
 				Name: "getQueueLength",
 				Metrics: []*util.Metric{
 					{
-						Name:     "eth_optimism_ctc_queue_length",
-						Help:     "Retrieves the length of the queue, including both pending and canonical transactions",
-						OutputFn: util.BigOutput,
+						Name:   "eth_optimism_ctc_queue_length",
+						Help:   "Retrieves the length of the queue, including both pending and canonical transactions",
+						Output: util.BigOutput(""),
 					},
 				},
 			},
@@ -133,10 +131,9 @@ func Status(w http.ResponseWriter, r *http.Request) error {
 				Name: "getTotalElements",
 				Metrics: []*util.Metric{
 					{
-						Name:     "eth_optimism_scc_total_elements",
-						Help:     "Retrieves the total number of elements submitted",
-						Output:   "_totalElements",
-						OutputFn: util.BigOutput,
+						Name:   "eth_optimism_scc_total_elements",
+						Help:   "Retrieves the total number of elements submitted",
+						Output: util.BigOutput("_totalElements"),
 					},
 				},
 			},
@@ -144,10 +141,9 @@ func Status(w http.ResponseWriter, r *http.Request) error {
 				Name: "getTotalBatches",
 				Metrics: []*util.Metric{
 					{
-						Name:     "eth_optimism_scc_total_batches",
-						Help:     "Retrieves the total number of batches submitted",
-						Output:   "_totalBatches",
-						OutputFn: util.BigOutput,
+						Name:   "eth_optimism_scc_total_batches",
+						Help:   "Retrieves the total number of batches submitted",
+						Output: util.BigOutput("_totalBatches"),
 					},
 				},
 			},
@@ -155,10 +151,9 @@ func Status(w http.ResponseWriter, r *http.Request) error {
 				Name: "getLastSequencerTimestamp",
 				Metrics: []*util.Metric{
 					{
-						Name:     "eth_optimism_scc_last_sequencer_timestamp",
-						Help:     "Retrieves the timestamp of the last batch submitted by the sequencer",
-						Output:   "_lastSequencerTimestamp",
-						OutputFn: util.BigOutput,
+						Name:   "eth_optimism_scc_last_sequencer_timestamp",
+						Help:   "Retrieves the timestamp of the last batch submitted by the sequencer",
+						Output: util.BigOutput("_lastSequencerTimestamp"),
 					},
 				},
 			},
@@ -166,9 +161,9 @@ func Status(w http.ResponseWriter, r *http.Request) error {
 				Name: "nextIndex",
 				Metrics: []*util.Metric{
 					{
-						Name:     "eth_optimism_scc_next_index",
-						Help:     "Retrieves the batch index to verify next",
-						OutputFn: util.BigOutput,
+						Name:   "eth_optimism_scc_next_index",
+						Help:   "Retrieves the batch index to verify next",
+						Output: util.BigOutput(""),
 					},
 				},
 			},

@@ -46,9 +46,8 @@ func Validator(w http.ResponseWriter, r *http.Request) error {
 				Inputs: []interface{}{validatorAddr, common.Big0},
 				Metrics: []*util.Metric{
 					{
-						Name:     "eth_pos_validator_candidate",
-						Output:   "candidate",
-						OutputFn: util.BoolOutput,
+						Name:   "eth_pos_validator_candidate",
+						Output: util.BoolOutput("candidate"),
 					},
 				},
 			},
@@ -57,14 +56,12 @@ func Validator(w http.ResponseWriter, r *http.Request) error {
 				Inputs: []interface{}{validatorAddr, common.Big0},
 				Metrics: []*util.Metric{
 					{
-						Name:     "eth_pos_validator_blocks",
-						Output:   "blocks",
-						OutputFn: util.BigOutput,
+						Name:   "eth_pos_validator_blocks",
+						Output: util.BigOutput("blocks"),
 					},
 					{
-						Name:     "eth_pos_validator_slashes",
-						Output:   "slashes",
-						OutputFn: util.BigOutput,
+						Name:   "eth_pos_validator_slashes",
+						Output: util.BigOutput("slashes"),
 					},
 				},
 			},
