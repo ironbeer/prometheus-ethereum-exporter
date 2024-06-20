@@ -64,11 +64,6 @@ func GetBlock(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	pendingTx, err := client.PendingTransactionCount(r.Context())
-	if err != nil {
-		return err
-	}
-
 	number := prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "eth_block_number",
 		Help: "Displays ethereum latest block number",
@@ -93,10 +88,6 @@ func GetBlock(w http.ResponseWriter, r *http.Request) error {
 		Name: "eth_block_transactions",
 		Help: "Displays ethereum latest block transaction count",
 	})
-	pendingTransactions := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "eth_block_pendingTransactions",
-		Help: "Displays ethereum latest pending transaction count",
-	})
 
 	collectors := []prometheus.Collector{
 		number,
@@ -105,7 +96,6 @@ func GetBlock(w http.ResponseWriter, r *http.Request) error {
 		gasLimit,
 		gasUsed,
 		transactions,
-		pendingTransactions,
 	}
 
 	registry := prometheus.NewRegistry()
@@ -122,7 +112,6 @@ func GetBlock(w http.ResponseWriter, r *http.Request) error {
 	gasLimit.Set((float64(block.GasLimit())))
 	gasUsed.Set((float64(block.GasUsed())))
 	transactions.Set((float64(block.Transactions().Len())))
-	pendingTransactions.Set((float64(pendingTx)))
 
 	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 	h.ServeHTTP(w, r)
