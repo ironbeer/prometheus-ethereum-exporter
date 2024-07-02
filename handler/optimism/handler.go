@@ -196,6 +196,35 @@ var (
 				},
 			},
 		},
+		{
+			query: "opl2oo",
+			abi:   &l2ooABI,
+			contract: &util.Contract{
+				Name: "OPL2OO",
+				Methods: []*util.Method{
+					{
+						Name: "latestOutputIndex",
+						Metrics: []*util.Metric{
+							{
+								Name:   "eth_optimism_l2oo_latest_output_index",
+								Help:   "Returns the number of outputs that have been proposed",
+								Output: util.BigOutput(""),
+							},
+						},
+					},
+					{
+						Name: "latestBlockNumber",
+						Metrics: []*util.Metric{
+							{
+								Name:   "eth_optimism_l2oo_latest_block_number",
+								Help:   "Returns the block number of the latest submitted L2 output proposal",
+								Output: util.BigOutput(""),
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 )
 
