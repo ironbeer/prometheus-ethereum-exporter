@@ -4,6 +4,7 @@ import (
 	"errors"
 	"math/big"
 	"net/http"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -53,44 +54,69 @@ func GetBlock(w http.ResponseWriter, r *http.Request) error {
 		return errors.New("missing parameter: rpc")
 	}
 
+	numberLabel := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("number")))
+	if numberLabel == "" {
+		numberLabel = "latest"
+	}
+
+	number := new(big.Int)
+	switch numberLabel {
+	case "pending":
+		number.SetInt64(-1)
+	case "latest":
+		number.SetInt64(-2)
+	case "finalized":
+		number.SetInt64(-3)
+	case "safe":
+		number.SetInt64(-4)
+	}
+
 	client, err := ethclient.Dial(rpc)
 	if err != nil {
 		return err
 	}
 	defer client.Close()
 
-	block, err := client.BlockByNumber(r.Context(), nil)
+	res, err := client.BlockByNumber(r.Context(), number)
 	if err != nil {
 		return err
 	}
 
-	number := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "eth_block_number",
-		Help: "Displays ethereum latest block number",
+	labels := prometheus.Labels{"number": numberLabel}
+
+	blockNumber := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name:        "eth_block_number",
+		Help:        "Displays ethereum latest block number",
+		ConstLabels: labels,
 	})
 	baseFeePerGas := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "eth_block_baseFeePerGas",
-		Help: "Displays ethereum latest block baseFeePerGas",
+		Name:        "eth_block_baseFeePerGas",
+		Help:        "Displays ethereum latest block baseFeePerGas",
+		ConstLabels: labels,
 	})
 	timestamp := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "eth_block_timestamp",
-		Help: "Displays ethereum latest block timestamp",
+		Name:        "eth_block_timestamp",
+		Help:        "Displays ethereum latest block timestamp",
+		ConstLabels: labels,
 	})
 	gasLimit := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "eth_block_gasLimit",
-		Help: "Displays ethereum latest block gas limit",
+		Name:        "eth_block_gasLimit",
+		Help:        "Displays ethereum latest block gas limit",
+		ConstLabels: labels,
 	})
 	gasUsed := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "eth_block_gasUsed",
-		Help: "Displays ethereum latest block gas used",
+		Name:        "eth_block_gasUsed",
+		Help:        "Displays ethereum latest block gas used",
+		ConstLabels: labels,
 	})
 	transactions := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "eth_block_transactions",
-		Help: "Displays ethereum latest block transaction count",
+		Name:        "eth_block_transactions",
+		Help:        "Displays ethereum latest block transaction count",
+		ConstLabels: labels,
 	})
 
 	collectors := []prometheus.Collector{
-		number,
+		blockNumber,
 		baseFeePerGas,
 		timestamp,
 		gasLimit,
@@ -100,18 +126,19 @@ func GetBlock(w http.ResponseWriter, r *http.Request) error {
 
 	registry := prometheus.NewRegistry()
 	for _, c := range collectors {
+		c := c
 		registry.MustRegister(c)
 		defer registry.Unregister(c)
 	}
 
-	number.Set(bigFloat(block.Number()))
-	if bf := block.BaseFee(); bf != nil {
+	blockNumber.Set(bigFloat(res.Number()))
+	if bf := res.BaseFee(); bf != nil {
 		baseFeePerGas.Set(bigFloat(bf))
 	}
-	timestamp.Set(float64(block.Time()))
-	gasLimit.Set((float64(block.GasLimit())))
-	gasUsed.Set((float64(block.GasUsed())))
-	transactions.Set((float64(block.Transactions().Len())))
+	timestamp.Set(float64(res.Time()))
+	gasLimit.Set((float64(res.GasLimit())))
+	gasUsed.Set((float64(res.GasUsed())))
+	transactions.Set((float64(res.Transactions().Len())))
 
 	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 	h.ServeHTTP(w, r)
