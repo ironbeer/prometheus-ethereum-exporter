@@ -43,9 +43,9 @@ func main() {
 	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		name := r.URL.Query().Get("method")
 		if method, ok := methods[name]; !ok {
-			fmt.Printf("unknown method: %s\n", name)
+			http.Error(w, fmt.Sprintf("unknown method: %s", name), http.StatusBadRequest)
 		} else if err := method(w, r); err != nil {
-			fmt.Println(err.Error())
+			http.Error(w, err.Error(), http.StatusBadRequest)
 		}
 	})
 
