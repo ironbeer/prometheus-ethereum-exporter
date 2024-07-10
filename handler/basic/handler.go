@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -49,7 +50,18 @@ func GetBalance(w http.ResponseWriter, r *http.Request) error {
 }
 
 func GetBlock(w http.ResponseWriter, r *http.Request) error {
+	getBlock := func(rpc string, number *big.Int) (*types.Block, error) {
+		client, err := ethclient.Dial(rpc)
+		if err != nil {
+			return nil, err
+		}
+		defer client.Close()
+
+		return client.BlockByNumber(r.Context(), number)
+	}
+
 	rpc := r.URL.Query().Get("rpc")
+	origin := r.URL.Query().Get("origin")
 	if rpc == "" {
 		return errors.New("missing parameter: rpc")
 	}
@@ -58,6 +70,7 @@ func GetBlock(w http.ResponseWriter, r *http.Request) error {
 	if numberLabel == "" {
 		numberLabel = "latest"
 	}
+	labels := prometheus.Labels{"number": numberLabel}
 
 	number := new(big.Int)
 	switch numberLabel {
@@ -71,18 +84,10 @@ func GetBlock(w http.ResponseWriter, r *http.Request) error {
 		number.SetInt64(-4)
 	}
 
-	client, err := ethclient.Dial(rpc)
+	blk, err := getBlock(rpc, number)
 	if err != nil {
 		return err
 	}
-	defer client.Close()
-
-	res, err := client.BlockByNumber(r.Context(), number)
-	if err != nil {
-		return err
-	}
-
-	labels := prometheus.Labels{"number": numberLabel}
 
 	blockNumber := prometheus.NewGauge(prometheus.GaugeOpts{
 		Name:        "eth_block_number",
@@ -131,14 +136,35 @@ func GetBlock(w http.ResponseWriter, r *http.Request) error {
 		defer registry.Unregister(c)
 	}
 
-	blockNumber.Set(bigFloat(res.Number()))
-	if bf := res.BaseFee(); bf != nil {
+	blockNumber.Set(bigFloat(blk.Number()))
+	if bf := blk.BaseFee(); bf != nil {
 		baseFeePerGas.Set(bigFloat(bf))
 	}
-	timestamp.Set(float64(res.Time()))
-	gasLimit.Set((float64(res.GasLimit())))
-	gasUsed.Set((float64(res.GasUsed())))
-	transactions.Set((float64(res.Transactions().Len())))
+	timestamp.Set(float64(blk.Time()))
+	gasLimit.Set((float64(blk.GasLimit())))
+	gasUsed.Set((float64(blk.GasUsed())))
+	transactions.Set((float64(blk.Transactions().Len())))
+
+	if origin != "" {
+		originBlk, err := getBlock(origin, blk.Number())
+		if err != nil {
+			return err
+		}
+
+		col := prometheus.NewGauge(prometheus.GaugeOpts{
+			Name:        "eth_block_match_origin",
+			Help:        "Checking if the block matches the origin",
+			ConstLabels: labels,
+		})
+		registry.MustRegister(col)
+		defer registry.Unregister(col)
+
+		if blk.Hash() == originBlk.Hash() && blk.Root() == originBlk.Root() {
+			col.Set(1)
+		} else {
+			col.Set(0)
+		}
+	}
 
 	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 	h.ServeHTTP(w, r)
