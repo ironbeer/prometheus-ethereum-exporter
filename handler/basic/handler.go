@@ -129,13 +129,6 @@ func GetBlock(w http.ResponseWriter, r *http.Request) error {
 		transactions,
 	}
 
-	registry := prometheus.NewRegistry()
-	for _, c := range collectors {
-		c := c
-		registry.MustRegister(c)
-		defer registry.Unregister(c)
-	}
-
 	blockNumber.Set(bigFloat(blk.Number()))
 	if bf := blk.BaseFee(); bf != nil {
 		baseFeePerGas.Set(bigFloat(bf))
@@ -151,19 +144,31 @@ func GetBlock(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 
-		col := prometheus.NewGauge(prometheus.GaugeOpts{
-			Name:        "eth_block_match_origin",
-			Help:        "Checking if the block matches the origin",
+		matchHash := prometheus.NewGauge(prometheus.GaugeOpts{
+			Name:        "eth_block_match_origin_hash",
+			Help:        "Checking if the block hash matches the origin",
 			ConstLabels: labels,
 		})
-		registry.MustRegister(col)
-		defer registry.Unregister(col)
+		matchState := prometheus.NewGauge(prometheus.GaugeOpts{
+			Name:        "eth_block_match_origin_state",
+			Help:        "Checking if the block state matches the origin",
+			ConstLabels: labels,
+		})
+		collectors = append(collectors, matchHash, matchState)
 
-		if blk.Hash() == originBlk.Hash() && blk.Root() == originBlk.Root() {
-			col.Set(1)
-		} else {
-			col.Set(0)
+		if blk.Hash() == originBlk.Hash() {
+			matchHash.Set(1)
 		}
+		if blk.Root() == originBlk.Root() {
+			matchState.Set(1)
+		}
+	}
+
+	registry := prometheus.NewRegistry()
+	for _, c := range collectors {
+		c := c
+		registry.MustRegister(c)
+		defer registry.Unregister(c)
 	}
 
 	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
