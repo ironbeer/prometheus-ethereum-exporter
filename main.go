@@ -27,10 +27,11 @@ var (
 			String()
 
 	methods = map[string]func(http.ResponseWriter, *http.Request) error{
-		"eth.getBalance":  basic.GetBalance,
-		"eth.getBlock":    basic.GetBlock,
-		"pos.validator":   pos.Validator,
-		"optimism.status": optimism.Status,
+		"eth.getBalance":      basic.GetBalance,
+		"eth.getBlock":        basic.GetBlock,
+		"eth.blockSyncOrigin": basic.BlockSyncOrigin,
+		"pos.validator":       pos.Validator,
+		"optimism.status":     optimism.Status,
 	}
 )
 
