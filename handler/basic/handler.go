@@ -3,6 +3,7 @@ package basic
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"net/http"
 	"strconv"
@@ -130,60 +131,84 @@ func GetBlock(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+var comparerMap = map[string]func(a, b *types.Block) bool{
+	"hash":  func(a, b *types.Block) bool { return a.Hash() == b.Hash() },
+	"state": func(a, b *types.Block) bool { return a.Root() == b.Root() },
+}
+
 func BlockSyncOrigin(w http.ResponseWriter, r *http.Request) error {
-	rpc := r.URL.Query().Get("rpc")
-	originRPC := r.URL.Query().Get("origin")
-	if rpc == "" {
+	query := r.URL.Query()
+
+	replicaRPC, empty := normalizeString(query.Get("rpc"))
+	if empty {
 		return errors.New("missing parameter: rpc")
 	}
-	if originRPC == "" {
+	originRPC, empty := normalizeString(query.Get("origin"))
+	if empty {
 		return errors.New("missing parameter: origin")
 	}
 
-	number, numLabel := bigBlockNumber(r.URL.Query().Get("number"))
+	number, numLabel := bigBlockNumber(query.Get("number"))
 	labels := make(prometheus.Labels)
 	if numLabel != nil {
 		labels["number"] = *numLabel
 	}
 
-	blk, err := getBlock(r.Context(), rpc, number)
-	if err != nil {
-		return err
-	}
-	originBlk, err := getBlock(r.Context(), originRPC, blk.Number())
-	if err != nil {
-		return err
+	comparer := make(map[string]func(a, b *types.Block) bool)
+	comparerQuery, empty := normalizeString(query.Get("comparer"))
+	if empty {
+		comparer = comparerMap
+	} else {
+		for _, s := range strings.Split(comparerQuery, ",") {
+			if fn, ok := comparerMap[s]; ok {
+				comparer[s] = fn
+			} else {
+				return fmt.Errorf("unknown comparer: %s", s)
+			}
+		}
 	}
 
-	syncFull := prometheus.NewGauge(prometheus.GaugeOpts{
+	replicaHeadBlk, err := getBlock(r.Context(), replicaRPC, number)
+	if err != nil {
+		return fmt.Errorf("failed to get replica head block: %w", err)
+	}
+	originHeadBlk, err := getBlock(r.Context(), originRPC, number)
+	if err != nil {
+		return fmt.Errorf("failed to get origin head block: %w", err)
+	}
+	originSameBlk, err := getBlock(r.Context(), originRPC, replicaHeadBlk.Number())
+	if err != nil {
+		return fmt.Errorf("failed to get origin block: %w", err)
+	}
+
+	replicaHead := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name:        "eth_block_sync_replica_head",
+		Help:        "Replica HEAD block number",
+		ConstLabels: labels,
+	})
+	originHead := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name:        "eth_block_sync_origin_head",
+		Help:        "Origin HEAD block number",
+		ConstLabels: labels,
+	})
+	sync := prometheus.NewGauge(prometheus.GaugeOpts{
 		Name:        "eth_block_sync_origin",
-		Help:        "Checking if the block hash and state are synchronized with the origin",
+		Help:        "Checking if the block are synchronized with the origin",
 		ConstLabels: labels,
 	})
-	syncHash := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name:        "eth_block_sync_origin_hash",
-		Help:        "Checking if the block hash are synchronized with the origin",
-		ConstLabels: labels,
-	})
-	syncRoot := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name:        "eth_block_sync_origin_state",
-		Help:        "Checking if the block state are synchronized with the origin",
-		ConstLabels: labels,
-	})
+	collectors := []prometheus.Collector{replicaHead, originHead, sync}
 
-	collectors := []prometheus.Collector{syncFull, syncHash, syncRoot}
+	syncVal := float64(1)
+	for _, fn := range comparer {
+		if !fn(replicaHeadBlk, originSameBlk) {
+			syncVal = 0
+			break
+		}
+	}
 
-	hashOk := blk.Hash() == originBlk.Hash()
-	stateOk := blk.Root() == originBlk.Root()
-	if hashOk && stateOk {
-		syncFull.Set(1)
-	}
-	if hashOk {
-		syncHash.Set(1)
-	}
-	if stateOk {
-		syncRoot.Set(1)
-	}
+	replicaHead.Set(float64(replicaHeadBlk.Number().Uint64()))
+	originHead.Set(float64(originHeadBlk.Number().Uint64()))
+	sync.Set(syncVal)
 
 	registry := prometheus.NewRegistry()
 	for _, c := range collectors {
@@ -213,7 +238,7 @@ func bigFloat(number *big.Int) float64 {
 }
 
 func bigBlockNumber(s string) (num *big.Int, label *string) {
-	s = strings.TrimSpace(s)
+	s, _ = normalizeString(s)
 	if strings.HasPrefix(s, "0x") {
 		return common.HexToAddress(s).Big(), nil
 	}
@@ -237,4 +262,10 @@ func bigBlockNumber(s string) (num *big.Int, label *string) {
 	}
 	label = &s
 	return num, label
+}
+
+func normalizeString(s string) (r string, empty bool) {
+	s = strings.TrimSpace(s)
+	s = strings.ToLower(s)
+	return s, s == ""
 }
